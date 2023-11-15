@@ -1,6 +1,7 @@
 import { getUser, getUsers } from "@/lib/get-users";
 import { PaperClipIcon } from "@heroicons/react/20/solid";
-import Image from "next/image";
+
+export const runtime = "edge";
 
 export async function generateStaticParams() {
   const users = getUsers();
