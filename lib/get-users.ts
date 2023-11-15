@@ -31,7 +31,7 @@ export function getUser(seed: number): User {
 
 export function getUsers(): User[] {
   const users = [];
-  for (let i = 1000; i < 2000; i++) {
+  for (let i = 1000; i < 10; i++) {
     users.push(getUser(i));
   }
   return users;
