@@ -7,7 +7,7 @@ random_pages_dir=app/random-pages
 
 rm -rf $random_pages_dir
 
-for i in {1..100}
+for i in {1..1000}
 do
   random_page_dir="$random_pages_dir/$i"
   random_page_path="$random_page_dir/page.tsx"
@@ -15,7 +15,7 @@ do
   sed -e "s/random_page_i/$i/" -e "s/random_value/$RANDOM/" $random_page_template_path > $random_page_path
 done
 
-echo "Generated 100 random pages"
+echo "Generated 1000 random pages"
 
 # ====================================
 
