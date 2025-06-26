@@ -8,8 +8,12 @@ export async function generateStaticParams() {
   }));
 }
 
-export default function Page({ params }: { params: { userId: string } }) {
-  const user = getUser(Number(params.userId));
+export default async function Page({
+  params,
+}: {
+  params: Promise<{ userId: string }>;
+}) {
+  const user = getUser(Number((await params).userId));
 
   return (
     <div>
