@@ -1,5 +1,9 @@
 #! /bin/bash
 
+echo "=== CPU Info ==="
+cat /proc/cpuinfo || echo "Note: /proc/cpuinfo not available on this system"
+echo "================"
+
 # first, generate 100 random pages
 
 random_page_template_path=app/random-page-template/page.tsx
