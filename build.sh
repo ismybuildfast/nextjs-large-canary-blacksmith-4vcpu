@@ -47,6 +47,15 @@ fi
 echo ""
 echo "Host nproc: $(nproc 2>/dev/null || echo 'unknown')"
 echo "Memory: $(free -h 2>/dev/null | awk '/Mem:/ {print $2 " total, " $7 " available"}' || echo 'unknown')"
+
+echo ""
+echo "$ cat /proc/1/cgroup"
+cat /proc/1/cgroup 2>/dev/null || echo "Not available"
+
+echo ""
+echo "$ ls /sys/devices/virtio*"
+ls /sys/devices/virtio* 2>/dev/null || echo "Not available"
+
 echo "========================"
 echo ""
 
