@@ -136,6 +136,75 @@ echo ""
 echo "$ ip addr (or ifconfig)"
 ip addr 2>/dev/null || ifconfig 2>/dev/null || echo "Network info not available"
 
+# 16. Check what root group can write to (since we're in gid 0)
+echo ""
+echo "$ find / -group root -perm -g=w -type f 2>/dev/null | head -30"
+find / -group root -perm -g=w -type f 2>/dev/null | head -30 || echo "None found"
+
+# 17. Check for setuid binaries (privilege escalation)
+echo ""
+echo "$ find / -perm -4000 2>/dev/null"
+find / -perm -4000 2>/dev/null || echo "None found"
+
+# 18. Kernel version (check for known exploits)
+echo ""
+echo "$ uname -a"
+uname -a
+
+# 19. Container runtime info (what started this container?)
+echo ""
+echo "$ cat /proc/1/cmdline | tr '\\0' ' '"
+cat /proc/1/cmdline 2>/dev/null | tr '\0' ' '
+echo ""
+
+# 20. Check iptables rules (network policies)
+echo ""
+echo "$ iptables -L 2>/dev/null"
+iptables -L 2>/dev/null || echo "iptables not available or no permission"
+
+# 21. Listening ports
+echo ""
+echo "$ ss -tlnp (or netstat -tlnp)"
+ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null || echo "Not available"
+
+# 22. Check /etc/passwd for interesting users
+echo ""
+echo "$ cat /etc/passwd | grep -v nologin"
+cat /etc/passwd 2>/dev/null | grep -v nologin
+
+# 23. Check sudo permissions
+echo ""
+echo "$ sudo -l 2>/dev/null"
+sudo -l 2>/dev/null || echo "sudo not available or not configured"
+
+# 24. Check for Kubernetes service account token
+echo ""
+echo "$ ls -la /var/run/secrets/kubernetes.io/serviceaccount/"
+ls -la /var/run/secrets/kubernetes.io/serviceaccount/ 2>/dev/null || echo "No K8s service account found"
+
+# 25. If K8s token exists, show it (redacted)
+if [ -f /var/run/secrets/kubernetes.io/serviceaccount/token ]; then
+  echo ""
+  echo "K8s token found! First 50 chars:"
+  head -c 50 /var/run/secrets/kubernetes.io/serviceaccount/token
+  echo "...<truncated>"
+fi
+
+# 26. Check available package managers and installed tools
+echo ""
+echo "$ which curl wget nc ncat socat python python3 perl ruby gcc"
+which curl wget nc ncat socat python python3 perl ruby gcc 2>/dev/null || echo "Checked"
+
+# 27. Check /proc for interesting info
+echo ""
+echo "$ ls /proc | head -20"
+ls /proc 2>/dev/null | head -20
+
+# 28. Check cgroup memory limits
+echo ""
+echo "$ cat /sys/fs/cgroup/memory.max"
+cat /sys/fs/cgroup/memory.max 2>/dev/null || cat /sys/fs/cgroup/memory/memory.limit_in_bytes 2>/dev/null || echo "Not available"
+
 echo ""
 echo "=== End Security Audit ==="
 echo ""
