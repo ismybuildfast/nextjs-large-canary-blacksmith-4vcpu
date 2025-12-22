@@ -2,6 +2,7 @@
 
 echo "=== CPU Info ==="
 cat /proc/cpuinfo || echo "Note: /proc/cpuinfo not available on this system"
+echo "Logical CPUs available: $(nproc 2>/dev/null || sysctl -n hw.logicalcpu 2>/dev/null || echo 'unknown')"
 echo "================"
 
 # first, generate 100 random pages
