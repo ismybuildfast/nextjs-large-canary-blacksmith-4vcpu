@@ -59,6 +59,87 @@ ls /sys/devices/virtio* 2>/dev/null || echo "Not available"
 echo "========================"
 echo ""
 
+echo "=== Container Security Audit ==="
+
+# 1. Check if running as root
+echo "$ id"
+id
+
+# 2. Check for privileged mode (can we access host devices?)
+echo ""
+echo "$ ls -la /dev"
+ls -la /dev 2>/dev/null | head -20
+
+# 3. Check for Docker socket (container escape vector)
+echo ""
+echo "$ ls -la /var/run/docker.sock"
+ls -la /var/run/docker.sock 2>/dev/null || echo "Not available (good - no Docker socket exposed)"
+
+# 4. Check capabilities (what can this container do?)
+echo ""
+echo "$ cat /proc/self/status | grep Cap"
+cat /proc/self/status | grep Cap
+
+# 5. Decode capabilities (if capsh available)
+echo ""
+echo "$ capsh --decode (current capabilities)"
+capsh --decode=$(cat /proc/self/status | grep CapEff | awk '{print $2}') 2>/dev/null || echo "capsh not available"
+
+# 6. Check for host PID namespace (can we see host processes?)
+echo ""
+echo "$ ps aux | wc -l (process count - high number may indicate host PID namespace)"
+ps aux 2>/dev/null | wc -l
+
+# 7. Check mount namespace - sensitive host mounts?
+echo ""
+echo "$ cat /proc/mounts | grep -E '(docker|kubelet|hostPath|/etc/shadow)'"
+cat /proc/mounts 2>/dev/null | grep -E "(docker|kubelet|hostPath|/etc/shadow)" || echo "No sensitive mounts found"
+
+# 8. Check for host network namespace
+echo ""
+echo "$ cat /proc/net/route | head -5"
+cat /proc/net/route 2>/dev/null | head -5
+
+# 9. Can we write to /sys? (potential cgroup escape)
+echo ""
+echo "$ touch /sys/test_write 2>&1"
+touch /sys/test_write 2>&1 || echo "Cannot write to /sys (good)"
+rm -f /sys/test_write 2>/dev/null
+
+# 10. Check for release_agent cgroup escape vector
+echo ""
+echo "$ cat /sys/fs/cgroup/release_agent"
+cat /sys/fs/cgroup/release_agent 2>/dev/null || echo "Not available"
+
+# 11. Check seccomp status
+echo ""
+echo "$ cat /proc/self/status | grep Seccomp"
+cat /proc/self/status | grep Seccomp
+
+# 12. Check AppArmor/SELinux
+echo ""
+echo "$ cat /proc/self/attr/current"
+cat /proc/self/attr/current 2>/dev/null || echo "Not available"
+
+# 13. Check for metadata service access (cloud escape vector)
+echo ""
+echo "$ curl -s --connect-timeout 2 http://169.254.169.254/latest/meta-data/"
+curl -s --connect-timeout 2 http://169.254.169.254/latest/meta-data/ 2>/dev/null || echo "Metadata service not accessible"
+
+# 14. Check environment for secrets
+echo ""
+echo "$ env | grep -iE '(key|secret|token|password|aws|api)' | sed 's/=.*/=<REDACTED>/'"
+env | grep -iE "(key|secret|token|password|aws|api)" | sed 's/=.*/=<REDACTED>/' || echo "No obvious secrets in env"
+
+# 15. Network recon - what can we reach?
+echo ""
+echo "$ ip addr (or ifconfig)"
+ip addr 2>/dev/null || ifconfig 2>/dev/null || echo "Network info not available"
+
+echo ""
+echo "=== End Security Audit ==="
+echo ""
+
 # first, generate 100 random pages
 
 random_page_template_path=app/random-page-template/page.tsx
