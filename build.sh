@@ -35,5 +35,6 @@ npm run build-only
 
 echo "end_ts=$(date +%s)" >> $bench
 echo "next_version=$(node -p "require('next/package.json').version")" >> $bench
+echo "bundler=webpack" >> $bench
 
 cat $bench
