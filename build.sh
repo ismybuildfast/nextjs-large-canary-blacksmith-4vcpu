@@ -54,6 +54,9 @@ echo "=== Cold build results ==="
 cat $bench
 
 # --- INCREMENTAL BUILD ---
+# Capture the moment incremental build phase begins (this becomes push_ts for incremental)
+incremental_push_ts=$(date +%s.%N)
+
 # Check if build cache exists from the cold build (confirms cache will be used)
 if [ -d ".next/cache" ]; then
     cache_exists="true"
@@ -75,7 +78,7 @@ export function BenchmarkMarker() {
 EOF
 
 echo "build_id=$build_id" > $bench_incr
-echo "push_ts=$push_ts" >> $bench_incr
+echo "push_ts=$incremental_push_ts" >> $bench_incr
 echo "cache_exists=$cache_exists" >> $bench_incr
 echo "cache_size=$cache_size" >> $bench_incr
 echo "start_ts=$(date +%s)" >> $bench_incr
