@@ -1,5 +1,6 @@
 import { getUsers } from "@/lib/get-users";
 import Link from "next/link";
+import { BenchmarkMarker } from "./benchmark-marker";
 
 export default function Home() {
   const users = getUsers();
@@ -13,6 +14,7 @@ export default function Home() {
           </li>
         ))}
       </ul>
+      <BenchmarkMarker />
     </main>
   );
 }
