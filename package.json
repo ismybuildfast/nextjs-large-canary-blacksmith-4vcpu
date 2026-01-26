@@ -1,11 +1,10 @@
 {
-  "name": "nextjs",
+  "name": "nextjs-large-canary-blacksmith-4vcpu",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "./build.sh",
-    "build-only": "next build --webpack",
+    "build-only": "next build",
     "start": "next start",
     "lint": "next lint"
   },
