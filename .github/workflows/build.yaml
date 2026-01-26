@@ -200,7 +200,7 @@ jobs:
         id: deploy_incr
         run: |
           DEPLOY_START=$(date +%s)
-          vercel deploy --prebuilt --prod --yes --token=${{ secrets.VERCEL_TOKEN }}
+          vercel deploy --archive=tgz --prebuilt --prod --yes --token=${{ secrets.VERCEL_TOKEN }}
           DEPLOY_END=$(date +%s)
           echo "deploy_end=$DEPLOY_END" >> $GITHUB_OUTPUT
         env:
