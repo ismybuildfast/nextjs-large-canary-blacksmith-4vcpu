@@ -1,0 +1,9 @@
+build_id=PLACEHOLDER_WAITING_FOR_DEPLOY
+push_ts=0
+start_ts=0
+end_ts=0
+ready_ts=0
+next_version=0.0.0
+bundler=webpack
+cache_exists=false
+cache_size=0
