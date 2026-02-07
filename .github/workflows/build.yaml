@@ -68,6 +68,9 @@ jobs:
           }
           MARKER
           
+          # Clean previous build output to ensure cold build
+          rm -rf .vercel/output .next
+          
           # Build
           START_TS=$(date +%s)
           vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
