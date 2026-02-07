@@ -74,7 +74,7 @@ jobs:
           source ./build
           
           # Reset benchmark marker
-          cat > app/benchmark-marker.tsx << 'MARKER'
+          cat > app/bench/marker.tsx << 'MARKER'
           // Marker: baseline
           export function BenchmarkMarker() {
             return <span data-benchmark="baseline" style={{ display: 'none' }} />
@@ -117,7 +117,7 @@ jobs:
           fi
           
           # Modify file to trigger rebuild
-          cat > app/benchmark-marker.tsx << EOF
+          cat > app/bench/marker.tsx << EOF
           // Marker: ${build_id}-incr-$(date +%s)
           export function BenchmarkMarker() {
             return <span data-benchmark="${build_id}-incr" style={{ display: 'none' }} />
