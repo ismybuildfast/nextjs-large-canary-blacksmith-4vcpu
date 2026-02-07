@@ -21,8 +21,21 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Cache Vercel CLI
+        id: vercel-cache
+        uses: useblacksmith/cache@v5
+        with:
+          path: ~/.npm-global
+          key: vercel-cli-${{ runner.os }}
+
       - name: Install Vercel CLI
-        run: npm i -g vercel
+        if: steps.vercel-cache.outputs.cache-hit != 'true'
+        run: |
+          npm config set prefix ~/.npm-global
+          npm i -g vercel
+
+      - name: Add Vercel CLI to PATH
+        run: echo "$HOME/.npm-global/bin" >> $GITHUB_PATH
 
       - name: Pull Vercel Environment
         run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
