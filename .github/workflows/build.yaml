@@ -69,7 +69,7 @@ jobs:
           MARKER
           
           # Clean previous build output to ensure cold build
-          rm -rf .vercel/output .next
+          rm -rf .vercel/output
           
           # Build
           START_TS=$(date +%s)
